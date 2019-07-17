@@ -9,23 +9,22 @@
 -->
 
 
-<!--
 ---
 
-## Table of Contents (Optional)
+## Table of Contents
 
-> If you're `README` has a lot of info, section headers might be nice.
-
+<!--
 - [Installation](#installation)
 - [Features](#features)
 - [Contributing](#contributing)
-- [Team](#team)
+-->
+- [Usage](#usage)
 - [FAQ](#faq)
+- [People](#people)
 - [Support](#support)
 - [License](#license)
 
 ---
--->
 
 <!--
 ## Example
@@ -81,8 +80,6 @@ $ bower install
 ## Tests (Optional)
 -->
 
----
-
 ## Usage
 
 ---
@@ -113,6 +110,14 @@ $ bower install
 ---
 -->
 
+## FAQ
+<!--
+- **How do I do *specifically* so and so?**
+    - No problem! Just do this.
+-->
+
+---
+
 ## People
 
 | <a href="https://github.com/EricSchraider" target="_blank">**Aaron Schroeder**</a> |
@@ -120,13 +125,6 @@ $ bower install
 | [![Aaron Schroeder](https://avatars0.githubusercontent.com/u/39806580?v=4&s=200)](https://github.com/EricSchraider) |
 | <a href="https://github.com/EricSchraider" target="_blank">`github.com/EricSchraider`</a> |
 
----
-
-## FAQ
-<!--
-- **How do I do *specifically* so and so?**
-    - No problem! Just do this.
--->
 ---
 
 ## Support
@@ -155,4 +153,4 @@ Reach out to me at one of the following places!
 [![License](http://img.shields.io/:license-mit-blue.svg?style=flat-square)](http://badges.mit-license.org)
 
 - **[MIT license](http://opensource.org/licenses/mit-license.php)**
-- Copyright 2018 © <a href="https://trailzealot.com/about" target="_blank">Aaron Schroeder</a>.
+- Copyright 2019 © <a href="https://trailzealot.com/about" target="_blank">Aaron Schroeder</a>.
