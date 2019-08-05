@@ -14,6 +14,7 @@ import time
 import numpy as np
 from geopy.point import Point
 from geopy.distance import great_circle as distance
+import networkx as nx
 import django
 import matplotlib as mpl
 mpl.use('Agg')
@@ -23,7 +24,7 @@ sys.path.insert(0, '/home/aaronsch/webapps/aarontakesawalk/trailzealot')
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "trailzealot.settings")
 django.setup()
 from boulderhikes.models import Activity, Route
-from mapmatching import Segment, Candidate, Viterbi
+from mapmatching import mapmatch, Segment, Viterbi, MapMatcher
 from myutils import find_closest_point, get_route_dist
 from utils.hikehelper import get_bearing_lat_lon
 
@@ -69,9 +70,23 @@ emission_latlons_unreduced = np.array(activity['latlons'])
 """
 # (Server version)
 activity = Activity.objects.get(number=185) 
-emission_times_unreduced = np.array(activity.src_data['times'])
+emission_times_unreduced = np.array(activity.src_data['times'][0:200])
 emission_points_unreduced = np.array([Point(latlon[::-1]) 
-    for latlon in activity.get_latlon_coords()])
+    for latlon in activity.get_latlon_coords()[0:200]])
+#emission_times_unreduced = np.array(activity.src_data['times'])
+#emission_points_unreduced = np.array([Point(latlon[::-1]) 
+#    for latlon in activity.get_latlon_coords()])
+
+## Eliminate gps points that are not sufficiently far from last gps point. 
+## (If gps reports movement, it might just be random error)
+#mapmatcher = MapMatcher()
+#emission_points_reduced, emission_times_reduced = \
+#    mapmatcher.reduced_points(
+#        emission_points_unreduced, 
+#        emission_times_unreduced)
+#
+#print('Reduced number of gps points from %0.0f to %0.0f' 
+#    % (len(emission_times_unreduced), len(emission_times_reduced)))
 
 # Route coordinates
 """
@@ -84,233 +99,260 @@ node_latlons = np.array(data_dict_route['latlons'][::num_skip_route+1])
 # (Server version)
 route = Route.objects.get(slug="green-mountain-gregory-canyon-ranger-trails")
 num_skip_route = 0 # if > 0, reduces number of route points we are matching
-node_points = [Point(latlon[::-1]) 
-    for latlon in route.get_latlon_coords()[::num_skip_route+1]]
-segments = [Segment(node_points[i], node_points[i+1])
-    for i in range(0,len(node_points)-1)]
+latlons = route.get_latlon_coords()[:1000:num_skip_route+1]
+#latlons = route.get_latlon_coords()[::num_skip_route+1]
+node_points = [Point(latlon[::-1]) for latlon in latlons]
 
-# Eliminate gps points that are not sufficiently far from last gps point. 
-# (If gps reports movement, it might just be random error)
-print('Unreduced number of gps points: %0.0f' % len(emission_times_unreduced))
-emission_times_reduced_list = [emission_times_unreduced[0]]      # initializing lists 
-emission_points_reduced_list = [emission_points_unreduced[0]]  # which will be appended in loop
-t1 = 0 # index of first point
-t2 = 1 # index of second point (which may or may not be far enough away from first point)
-for t in range(0,len(emission_times_unreduced)-1):
-    point_1 = emission_points_unreduced[t1]
-    point_2 = emission_points_unreduced[t2]
-    emission_dist = distance(point_1,point_2).meters
-    if emission_dist < 2*SIGMA_Z:
-        t2 = t2 + 1 
-    else:
-        # we are sufficiently far from previous point. Add this point to the list.
-        emission_points_reduced_list.append(emission_points_unreduced[t2])
-        emission_times_reduced_list.append(emission_times_unreduced[t2])
-        t1 = t2     # set indices
-        t2 = t1 + 1 # for next loop
-emission_times_reduced = np.array(emission_times_reduced_list)
-emission_points_reduced = np.array(emission_points_reduced_list)
-print('Reduced number of gps points: %0.0f' % len(emission_times_reduced))
+#segments = [Segment(node_points[i], node_points[i+1])
+#    for i in range(0,len(node_points)-1)]
 
-# Skip a specified number of already-reduced gps points
-stride = num_skip + 1
-emission_times_reduced_skipped = emission_times_reduced[::stride]
-emission_points_reduced_skipped = emission_points_reduced[::stride]
-#emission_cadences = np.array(activity.src_data['cadences'][::stride]) # used once I am capable of using cadence data
-print('Further reduced number of gps points: %0.0f, after skipping every %0.0f points' % (len(emission_times_reduced_skipped),num_skip))
+graph = nx.Graph()  # nx.DiGraph() for directional graph
+for i in range(0,len(latlons)):
+    graph.add_node(
+        i, 
+        pos=(node_points[i].latitude, node_points[i].longitude)
+    )
+for i in range(0,len(latlons)-1):
+    graph.add_edge(
+        i,
+        i+1,
+        key=i,
+        length=distance(
+            node_points[i],
+            node_points[i+1]).meters
+    )
 
-# Store some info for later
-dists_gps_cum = {emission_times_reduced[0]: 0.0}
-for t in range(1,len(emission_times_reduced)):
-    dists_gps_cum[emission_times_reduced[t]] =  \
-        dists_gps_cum[emission_times_reduced[t-1]] + \
-        distance(emission_points_reduced[t-1], 
-                 emission_points_reduced[t]).meters
-dists_gps_unreduced_cum = {emission_times_unreduced[0]: 0.0}
-for t in range(1,len(emission_times_unreduced)):
-    dists_gps_unreduced_cum[emission_times_unreduced[t]] =  \
-        dists_gps_unreduced_cum[emission_times_unreduced[t-1]] + \
-        distance(emission_points_unreduced[t-1], 
-                 emission_points_unreduced[t]).meters
-dists_gps_skipped_cum = {emission_times_reduced_skipped[0]: 0.0}
-for t in range(1,len(emission_times_reduced_skipped)):
-    dists_gps_skipped_cum[emission_times_reduced_skipped[t]] =  \
-        dists_gps_skipped_cum[emission_times_reduced_skipped[t-1]] + \
-        distance(emission_points_reduced_skipped[t-1], 
-                 emission_points_reduced_skipped[t]).meters
+points_matched, emission_points_matched = mapmatch(
+    emission_points_unreduced,
+    emission_times_unreduced,
+    graph)
 
-# handy variables
-nT = len(emission_times_reduced_skipped) 
-nSeg = len(segments)
-dists_cum = np.cumsum([segment.get_length() for segment in segments])
-
-# Construct array of distances (along route) between route segment midpoints
-route_distance_array = np.array([
-        0.5*(segments[i].get_length() + segments[i+1].get_length()) \
-        for i in range(0,nSeg-1)
-    ])
-# Construct matrix of distances between segment midpoints
-route_distances = np.zeros((nSeg,nSeg),dtype=float)
-for i in range(0,nSeg):
-    route_distances[i,i+1:] = np.cumsum(route_distance_array[i:])
-    route_distances[i+1:,i] = np.cumsum(route_distance_array[i:])
-
-#candidates = np.zeros((nT,nSeg,2))
-
-# Construct list of candidates corresponding to the midpoint of each segment
-candidates = [segment.get_midpoint() for segment in segments]
-
-print("Assembling emission probability matrix")
-#candidates = {} 
-E = np.zeros((nT,nSeg),dtype=float)
-for t in range(0,nT):
-    #emission_time = emission_times_reduced_skipped[t]
-    emission_point = emission_points_reduced_skipped[t]
-    #candidates[t] = {}
-    timer = np.zeros(3)
-    for i in range(0,nSeg): 
-       start = time.time()
-       #closest_point = segments[i].find_closest_point(emission_point)
-       closest_point = candidates[i]
-       t1 = time.time()
-       timer[0] = timer[0] + t1 - start
-       dist_emission_to_candidate = distance(
-           emission_point,
-           closest_point).meters
-       t2 = time.time()
-       timer[1] = timer[1] + t2 - t1
-       if dist_emission_to_candidate < DIST_ERR_TOL:
-           emission_prob = ((2*math.pi)**0.5*SIGMA_Z)**-1 \
-               * math.exp(-0.5*(dist_emission_to_candidate/SIGMA_Z)**2)
-           E[t,i] = emission_prob
-           #candidates[t][i] = Candidate(
-           #    closest_point, 
-           #    dist_emission_to_candidate, 
-           #    emission_prob)
-           t3 = time.time()
-           timer[2] = timer[2] + t3 - t2
-    sum_emission_probs_t = sum(E[t, :])
-    if sum_emission_probs_t > 0:
-        E[t, :] = E[t, :]/sum_emission_probs_t
-    else:
-        print("No candidates at timestep number %0.0f" % (t,))
-    #sum_emission_probs_t = sum([candidate.prob 
-    #    for candidate in candidates[t].values()])
-    #for seg_number in candidates[t].keys():
-    #    candidates[t][seg_number].prob = candidates[t][seg_number].prob/sum_emission_probs_t
-    #print('%0.1f, '
-    #      '%0.1f, '
-    #      '%0.1f' % (
-    #           100000*(timer[0]),
-    #           100000*(timer[1]),
-    #           100000*(timer[2]),
-    #       )
-    #)
-
-print("Assembling transition probability matrix")
-print("%0.0f transitions, %0.0f segments" % (nT-1, nSeg))
-#A = {}
-A = np.zeros((nT-1,nSeg,nSeg))
-for t in range(0,nT-1):
-    if t % 20 == 0:
-        print(t)
-    dist_between_emissions = dists_gps_cum[emission_times_reduced_skipped[t+1]]  \
-                            -dists_gps_cum[emission_times_reduced_skipped[t]]
-    for i in np.nonzero(E[t,:])[0]:
-        for j in np.nonzero(E[t+1,:])[0]:
-            #A[t,i,j] = 1.0
-            dist_along_route = route_distances[i,j]
-            speed_route = dist_along_route / \
-                (emission_times_reduced_skipped[t+1] \
-               - emission_times_reduced_skipped[t])
-            dt = abs(dist_between_emissions - dist_along_route)
-            dt_frac = dt/dist_between_emissions
-            # 9 m/s is 20.1mph / 3 min/mile, which is as fast as I will ever move.
-            # paper uses 2000 m, but I am interested in 1- to 10-second data. # ADS HERE: RE-EVALUATE!!
-            if speed_route < 9.0 and dt <= 200.0:
-                # reduce transition probability if route and gps distances are different
-                p_dt = (1/BETA)*math.exp(-dt/BETA)
-                A[t, i, j] = p_dt
-        # Normalize the transition probabilities to sum to 1.0
-        if sum(A[t,i,:]) > 0.0: 
-            A[t,i,:] = A[t,i,:]/sum(A[t,i,:])
-    if not np.any(A[t]):
-        print("No transitions available at timestep %0.0f" % (t,))
-
-v = Viterbi(E, A)
-z_pred = v.viterbi()
+## Skip a specified number of already-reduced gps points
+#stride = num_skip + 1
+#emission_times_reduced_skipped = emission_times_reduced[::stride]
+#emission_points_reduced_skipped = emission_points_reduced[::stride]
+##emission_cadences = np.array(activity.src_data['cadences'][::stride]) # used once I am capable of using cadence data
+#print('Further reduced number of gps points: %0.0f, after skipping every %0.0f points' % (len(emission_times_reduced_skipped),num_skip))
+#
+## Store some info for later
+#dists_gps_cum = {emission_times_reduced[0]: 0.0}
+#for t in range(1,len(emission_times_reduced)):
+#    dists_gps_cum[emission_times_reduced[t]] =  \
+#        dists_gps_cum[emission_times_reduced[t-1]] + \
+#        distance(emission_points_reduced[t-1], 
+#                 emission_points_reduced[t]).meters
+#
+## handy variables
+#nT = len(emission_times_reduced_skipped) 
+#nSeg = len(segments)
+#dists_cum = np.cumsum([segment.get_length() for segment in segments])
+#
+## Construct array of distances (along route) between route segment midpoints
+#route_distance_array = np.array([
+#        0.5*(segments[i].get_length() + segments[i+1].get_length()) \
+#        for i in range(0,nSeg-1)
+#    ])
+## Construct matrix of distances between segment midpoints
+#route_distances = np.zeros((nSeg,nSeg),dtype=float)
+#for i in range(0,nSeg):
+#    route_distances[i,i+1:] = np.cumsum(route_distance_array[i:])
+#    route_distances[i+1:,i] = np.cumsum(route_distance_array[i:])
+#
+##candidates = np.zeros((nT,nSeg,2))
+#
+## Construct list of candidates corresponding to the midpoint of each segment
+#candidates = [segment.get_midpoint() for segment in segments]
+#
+#print("Assembling emission probability matrix")
+##candidates = {} 
+#E = mapmatcher.emission_probability(
+#    emission_points_reduced_skipped,
+#    candidates
+#)
+#
+#probs_nonzero = [np.nonzero(E[t,:])[0] for t in range(0,T)]
+#
+#print("Assembling transition probability matrix")
+#print("%0.0f transitions, %0.0f segments" % (nT-1, nSeg))
+#A = mapmatcher.transition_probability(
+#    emission_points_reduced_skipped,
+#    candidates,
+#    probs_nonzero
+#)
+#
+##A = {}
+#A = np.zeros((nT-1,nSeg,nSeg))
+#for t in range(0,nT-1):
+#    if t % 20 == 0:
+#        print(t)
+#    dist_between_emissions = dists_gps_cum[emission_times_reduced_skipped[t+1]]  \
+#                            -dists_gps_cum[emission_times_reduced_skipped[t]]
+#    for i in np.nonzero(E[t,:])[0]:
+#        for j in np.nonzero(E[t+1,:])[0]:
+#            #A[t,i,j] = 1.0
+#            dist_along_route = route_distances[i,j]
+#            speed_route = dist_along_route / \
+#                (emission_times_reduced_skipped[t+1] \
+#               - emission_times_reduced_skipped[t])
+#            dt = abs(dist_between_emissions - dist_along_route)
+#            dt_frac = dt/dist_between_emissions
+#            # 9 m/s is 20.1mph / 3 min/mile, which is as fast as I will ever move.
+#            # paper uses 2000 m, but I am interested in 1- to 10-second data. # ADS HERE: RE-EVALUATE!!
+#            if speed_route < 9.0 and dt <= 200.0:
+#                # reduce transition probability if route and gps distances are different
+#                p_dt = (1/BETA)*math.exp(-dt/BETA)
+#                A[t, i, j] = p_dt
+#        # Normalize the transition probabilities to sum to 1.0
+#        if sum(A[t,i,:]) > 0.0: 
+#            A[t,i,:] = A[t,i,:]/sum(A[t,i,:])
+#    if not np.any(A[t]):
+#        print("No transitions available at timestep %0.0f" % (t,))
+#
+#v = Viterbi(E, A)
+#z_pred = v.viterbi()
 
 """
 PLOT THE ROUTE PATH, THE GPS PATH, AND THE CORRECTED GPS PATH.
 """
-fig, ax = plt.subplots()
-#plt.plot(
-#    [p.longitude for p in emission_points_unreduced],
-#    [p.latitude for p in emission_points_unreduced],
-#    'b-',
-#    lw=1.0)
+fig1, ax = plt.subplots()
+plt.plot(
+    [p.longitude for p in emission_points_unreduced],
+    [p.latitude for p in emission_points_unreduced],
+    'b-',
+    lw=1.0)
 #plt.plot(
 #    [p.longitude for p in emission_points_reduced],
 #    [p.latitude for p in emission_points_reduced],
 #    'g-',
 #    lw=2.0)
-#plt.plot(
-#    [p.longitude for p in node_points],
-#    [p.latitude for p in node_points],
-#    'k-')
-#
-#max_dist_err = 0.0
-#for t in range(0,nT):
-#    seg_number_selected = z_pred[t]
-#    route_point_i = candidates[seg_number_selected]
-#    dist_err = distance(
-#        emission_points_reduced_skipped[t],
-#        route_point_i).meters
-#    if dist_err > max_dist_err:
-#        max_dist_err = dist_err
-#    plt.plot(
-#        [emission_points_reduced_skipped[t].longitude,
-#            route_point_i.longitude],
-#        [emission_points_reduced_skipped[t].latitude,
-#            route_point_i.latitude],
-#        'r-',
-#        lw=1.0)
-#    
-#    """
-#    plt.plot([emission_latlons[t][0],route_latlon_i[0]],[emission_latlons[t][1],route_latlon_i[1]],'rx')
-#    """
-#ratio = (1.0/math.cos(math.radians(node_points[0].latitude)))
-#ratio = 1.0
-#ax.set_aspect(ratio)
-#plt.savefig('mapmatch.png',dpi=900)
-# """
-# PLOT HORIZ SPEED vs TIME, VERT SPEED vs TIME, ELEVATION vs DISTANCE
-# All using the route data. Final data should not use the gps points, except as comparison.
-# """ 
+plt.plot(
+    [p.longitude for p in node_points],
+    [p.latitude for p in node_points],
+    'k-')
+
+max_dist_err = 0.0
+key_list = list(points_matched.keys())
+for t in range(0, len(key_list)):
+    #seg_number_selected = z_pred[t]
+    #route_point_i = candidates[seg_number_selected]
+    route_point_i = points_matched[key_list[t]]
+    dist_err = distance(
+        emission_points_matched[t],
+        route_point_i).meters
+    #if dist_err > max_dist_err:
+    #    max_dist_err = dist_err
+    plt.plot(
+        [emission_points_matched[t].longitude,
+            route_point_i.longitude],
+        [emission_points_matched[t].latitude,
+            route_point_i.latitude],
+        'r-',
+        lw=1.0)
+    
+    """
+    plt.plot([emission_latlons[t][0],route_latlon_i[0]],[emission_latlons[t][1],route_latlon_i[1]],'rx')
+    """
+ratio = (1.0/math.cos(math.radians(node_points[0].latitude)))
+ratio = 1.0
+ax.set_aspect(ratio)
+plt.savefig('mapmatch.png',dpi=900)
+
+import sys
+sys.exit()
+"""
+PLOT HORIZ SPEED vs TIME, VERT SPEED vs TIME, ELEVATION vs DISTANCE
+All using the route data. Final data should not use the gps points, except as comparison.
+""" 
 route_points = [candidates[seg_number_selected] for seg_number_selected in z_pred]
-dists_matched_cum = {emission_times_reduced[0]: 0.0}
-for t in range(1,nT):
-    dists_matched_cum[emission_times_reduced_skipped[t]] =  \
-        dists_matched_cum[emission_times_reduced_skipped[t-1]] + \
-        distance(route_points[t-1], 
-                 route_points[t]).meters
-plt.plot(
-    emission_times_unreduced, 
-    dists_gps_unreduced_cum.values(),
+dists_gps_unreduced = [distance(
+    emission_points_unreduced[t-1],
+    emission_points_unreduced[t]).meters \
+    for t in range(1,len(emission_times_unreduced))]
+dists_gps_reduced = [distance(
+    emission_points_reduced[t-1],
+    emission_points_reduced[t]).meters \
+    for t in range(1,len(emission_times_reduced))]
+dists_gps_reduced_skipped = [distance(
+    emission_points_reduced_skipped[t-1],
+    emission_points_reduced_skipped[t]).meters \
+    for t in range(1,nT)]
+dists_matched = [distance(
+    route_points[t-1],
+    route_points[t]).meters \
+    for t in range(1,nT)]
+dists_matched_rt = [route_distances[
+    z_pred[t-1],
+    z_pred[t]]  \
+    for t in range(1,nT)]
+
+speed_gps_unreduced = [dists_gps_unreduced[t-1]/  \
+    (emission_times_unreduced[t] - emission_times_unreduced[t-1])  \
+    for t in range(1,len(emission_times_unreduced))]
+speed_gps_reduced = [dists_gps_reduced[t-1]/  \
+    (emission_times_reduced[t] - emission_times_reduced[t-1])  \
+    for t in range(1,len(emission_times_reduced))]
+speed_gps_reduced_skipped = [dists_gps_reduced_skipped[t-1]/  \
+    (emission_times_reduced_skipped[t] - emission_times_reduced_skipped[t-1])  \
+    for t in range(1,nT)]
+speed_matched = [dists_matched[t-1]/  \
+    (emission_times_reduced_skipped[t] - emission_times_reduced_skipped[t-1])  \
+    for t in range(1,nT)]
+speed_matched_rt = [dists_matched_rt[t-1]/  \
+    (emission_times_reduced_skipped[t] - emission_times_reduced_skipped[t-1])  \
+    for t in range(1,nT)]
+
+dists_gps_unreduced_cum = np.cumsum(dists_gps_unreduced)
+dists_gps_reduced_cum = np.cumsum(dists_gps_reduced)
+dists_gps_reduced_skipped_cum = np.cumsum(dists_gps_reduced_skipped)
+dists_matched_cum = np.cumsum(dists_matched)
+dists_matched_rt_cum = np.cumsum(dists_matched_rt)
+
+fig, axs = plt.subplots(2)
+# Distance plot
+axs[0].plot(
+    emission_times_unreduced[1::], 
+    dists_gps_unreduced_cum,
     label="Unreduced")
-plt.plot(
-    emission_times_reduced,
-    dists_gps_cum.values(),
+axs[0].plot(
+    emission_times_reduced[1::],
+    dists_gps_reduced_cum,
     label="Reduced")
-plt.plot(
-    emission_times_reduced_skipped,
-    dists_gps_skipped_cum.values(),
+axs[0].plot(
+    emission_times_reduced_skipped[1::],
+    dists_gps_reduced_skipped_cum,
     label="Skipped")
-plt.plot(
-    emission_times_reduced_skipped,
-    dists_matched_cum.values(),
+axs[0].plot(
+    emission_times_reduced_skipped[1::],
+    dists_matched_cum,
     label="Matched")
-plt.legend(loc='upper left')
+axs[0].plot(
+    emission_times_reduced_skipped[1::],
+    dists_matched_rt_cum,
+    label="Matched (on-route)")
+axs[0].legend(loc='upper left')
+# Velocity plot
+axs[1].plot(
+    emission_times_unreduced[1::], 
+    speed_gps_unreduced,
+    label="Unreduced")
+axs[1].plot(
+    emission_times_reduced[1::],
+    speed_gps_reduced,
+    label="Reduced")
+axs[1].plot(
+    emission_times_reduced_skipped[1::],
+    speed_gps_reduced_skipped,
+    label="Skipped")
+axs[1].plot(
+    emission_times_reduced_skipped[1::],
+    speed_matched,
+    label="Matched")
+axs[1].plot(
+    emission_times_reduced_skipped[1::],
+    speed_matched_rt,
+    label="Matched (on-route)")
+axs[1].set_ylim(0,5)
+axs[1].legend(loc='upper left')
 plt.savefig('graphs.png',dpi=900)
 
 # STATISTICS

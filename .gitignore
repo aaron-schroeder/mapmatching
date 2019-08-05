@@ -1,0 +1,14 @@
+# need to figure out where to actually keep these types of files.
+*.p
+
+# not useful on github
+*.pyc
+
+# no need
+__pycache__/
+
+# do not include all the media I upload
+media/
+
+# managed in a public repo
+mapmatching/
