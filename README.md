@@ -17,9 +17,8 @@
 - [Motivation](#motivation)
 - [The Map Matching Algorithm](#the-map-matching-algorithm)
 - [Example](#example)
-<!-- - [FAQ](#faq) -->
-<!-- - [People](#people) -->
 - [Project Status](#project-status)
+- [Inspiration](#inspiration)
 - [Contact](#contact)
 - [License](#license)
 
@@ -97,11 +96,13 @@ points_matched, emission_points_matched = mapmatch(
 
 ### Complete
 
-- Created Python package 
+- Create Python package. Make pretty input-output later.
 
 ### Current Activities
 
 - Implement a series of tests to ensure functionality as development progresses.
+
+- Streamline input so user can be more hands-off.
 
 #### Benchmarking and Optimization
 
