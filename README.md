@@ -140,10 +140,10 @@ points_matched, emission_points_matched = mapmatch(
 <!--
 ## People
 
-| <a href="https://github.com/EricSchraider" target="_blank">**Aaron Schroeder**</a> |
+| <a href="https://github.com/aaron-schroeder" target="_blank">**Aaron Schroeder**</a> |
 | :---: |
-| [![Aaron Schroeder](https://avatars0.githubusercontent.com/u/39806580?v=4&s=200)](https://github.com/EricSchraider) |
-| <a href="https://github.com/EricSchraider" target="_blank">`github.com/EricSchraider`</a> |
+| [![Aaron Schroeder](https://avatars0.githubusercontent.com/u/39806580?v=4&s=200)](https://github.com/aaron-schroeder) |
+| <a href="https://github.com/aaron-schroeder" target="_blank">`github.com/aaron-schroeder`</a> |
 
 ---
 -->
@@ -166,7 +166,7 @@ Reach out to me at one of the following places!
 - LinkedIn: <a href="https://www.linkedin.com/in/aarondschroeder/" target="_blank">linkedin.com/in/aarondschroeder</a>
 - Twitter: <a href="https://twitter.com/trailzealot" target="_blank">@trailzealot</a>
 - Instagram: <a href="https://instagram.com/trailzealot" target="_blank">@trailzealot</a>
-- GitHub: <a href="https://github.com/EricSchraider" target="_blank">github.com/EricSchraider</a>
+- GitHub: <a href="https://github.com/aaron-schroeder" target="_blank">github.com/aaron-schroeder</a>
 
 ---
 
